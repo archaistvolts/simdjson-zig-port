@@ -1382,8 +1382,9 @@ pub const Parser = struct {
     pub fn initExistingFromReader(parser: *Parser, reader: *std.Io.Reader, options: Options) !void {
         parser.clearRetainingCapacity();
 
-        var aligned_w: cmn.AlignedAllocating(cmn.chunk_align) = .initOwnedSlice(
+        var aligned_w = std.Io.Writer.Allocating.initOwnedSliceAligned(
             parser.allocator,
+            cmn.chunk_align,
             parser.bytes.allocatedSlice(),
         );
         _ = try reader.streamRemaining(&aligned_w.writer);
@@ -1391,7 +1392,7 @@ pub const Parser = struct {
         parser.input_len = std.math.cast(u32, aligned_w.written().len) orelse
             return error.Overflow;
         const padded_len = try std.math.add(u32, parser.input_len, cmn.SIMDJSON_PADDING);
-        parser.bytes = aligned_w.toArrayList();
+        parser.bytes = aligned_w.toArrayListAligned(cmn.chunk_align);
         try parser.bytes.ensureTotalCapacityPrecise(parser.allocator, padded_len);
         parser.bytes.items.len = padded_len;
         try parser.finishInit(options);

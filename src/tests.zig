@@ -15,11 +15,7 @@ const is_win_release_small = builtin.mode == .ReleaseSmall and
     (builtin.target.os.tag == .windows or is_wine);
 
 test "tape build 1" {
-    const f = try std.fs.cwd().openFile("test/test.json", .{});
-    defer f.close();
-    var buf: [1024]u8 = undefined;
-    var freader = f.reader(&buf);
-    const input = try freader.interface.allocRemaining(allr, .limited(std.math.maxInt(u32)));
+    const input = try std.fs.cwd().readFileAlloc("test/test.json", allr, .unlimited);
     defer allr.free(input);
     const expecteds = [_]u64{
         TapeType.ROOT.encode_value(37), //  pointing  to 37 (rightafter  last  node) :0
@@ -345,6 +341,7 @@ test "ondemand get with struct - readme" {
     const input =
         \\{"a": {"b": "b-string"}}
     ;
+    // TODO add ondemand.initFileReader(file, input, buf) or something to reduce boilerplate
     // ondemand api requires a seekable file.
     // --- begin boilerplate ceremony.  this can usually be replaced with just opening a file
     const file_name = "ondemand_get_with_struct_readme";
@@ -356,7 +353,9 @@ test "ondemand get with struct - readme" {
     try tfile.seekTo(0);
     // --- end boilerplate ceremony.
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var src = tfile.reader(&read_buf);
+    var tio = std.Io.Threaded.init(allr);
+    defer tio.deinit();
+    var src = tfile.reader(tio.io(), &read_buf);
     var parser = try ondemand.Parser.init(&src, allr, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
@@ -382,7 +381,9 @@ test "ondemand at_pointer - readme" {
     try tfile.seekTo(0);
     // --- end boilerplate ceremony.
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var src = tfile.reader(&read_buf);
+    var tio = std.Io.Threaded.init(allr);
+    defer tio.deinit();
+    var src = tfile.reader(tio.io(), &read_buf);
     var parser = try ondemand.Parser.init(&src, allr, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
@@ -562,7 +563,9 @@ test "ondemand get with struct" {
     try tfile.writeAll(input);
     try tfile.seekTo(0);
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var freader = tfile.reader(&read_buf);
+    var tio = std.Io.Threaded.init(allr);
+    defer tio.deinit();
+    var freader = tfile.reader(tio.io(), &read_buf);
     var parser = try ondemand.Parser.init(&freader, allr, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
@@ -587,7 +590,9 @@ test "ondemand at_pointer" {
     try tfile.writeAll(input);
     try tfile.seekTo(0);
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var freader = tfile.reader(&read_buf);
+    var tio = std.Io.Threaded.init(allr);
+    defer tio.deinit();
+    var freader = tfile.reader(tio.io(), &read_buf);
     var parser = try ondemand.Parser.init(&freader, allr, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
@@ -623,7 +628,9 @@ fn test_ondemand_doc(input: []const u8, expected: *const fn (doc: *ondemand.Docu
     std.debug.assert(input.len == try tfile.write(input));
     try tfile.seekTo(0);
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var freader = tfile.reader(&read_buf);
+    var tio = std.Io.Threaded.init(allr);
+    defer tio.deinit();
+    var freader = tfile.reader(tio.io(), &read_buf);
     var parser = try ondemand.Parser.init(&freader, allr, &file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
@@ -1032,13 +1039,15 @@ test "twitter" {
         try parser.parse();
         try domCheckTweets(&parser);
     }
+    var tio = std.Io.Threaded.init(allr);
+    defer tio.deinit();
     { // initFromReader() / initExistingFromReader()
         var file = try std.fs.cwd().openFile(output_filename, .{});
         defer file.close();
 
         var buf: [4096]u8 = undefined;
         var parser = parser: {
-            var freader = file.reader(&buf);
+            var freader = file.reader(tio.io(), &buf);
             // parser has an invalid reference to freader. but that ok since we re-init below.
             var parser = try dom.Parser.initFromReader(allr, &freader.interface, .{});
             try parser.parse();
@@ -1050,7 +1059,7 @@ test "twitter" {
         for (0..5) |_| {
             file.close();
             file = try std.fs.cwd().openFile(output_filename, .{});
-            var freader = file.reader(&buf);
+            var freader = file.reader(tio.io(), &buf);
             try parser.initExistingFromReader(&freader.interface, .{});
             try testing.expectEqual(@as(usize, 0), parser.indexer.bit_indexer.tail.items.len);
             try parser.parse();
@@ -1061,7 +1070,7 @@ test "twitter" {
         var file = try std.fs.cwd().openFile(output_filename, .{});
         defer file.close();
         var read_buf: [READ_BUF_CAP]u8 = undefined;
-        var freader = file.reader(&read_buf);
+        var freader = file.reader(tio.io(), &read_buf);
         var parser = try ondemand.Parser.init(&freader, allr, output_filename, .{});
         defer parser.deinit();
         var tweets = try parser.iterate();
@@ -1071,7 +1080,7 @@ test "twitter" {
     }
 }
 
-test "Writer.AlignedAllocating" {
+test "Io.Writer.Allocating Aligned" {
     const input =
         \\[{"foo": null, "params": [1,2,4],  "id": 1},
         \\ {"foo": null, "params": [1,2,10], "id": 2},
@@ -1082,8 +1091,8 @@ test "Writer.AlignedAllocating" {
     var bytes: std.ArrayListAlignedUnmanaged(u8, .fromByteUnits(32)) = .{};
     try bytes.ensureTotalCapacity(allr, 100); // simulate existing allocation
     defer bytes.deinit(allr);
-    var aligned_w: cmn.AlignedAllocating(.fromByteUnits(32)) = .initOwnedSlice(allr, bytes.allocatedSlice());
+    var aligned_w = std.Io.Writer.Allocating.initOwnedSliceAligned(allr, .fromByteUnits(32), bytes.allocatedSlice());
     _ = try reader.streamRemaining(&aligned_w.writer);
-    bytes = aligned_w.toArrayList();
+    bytes = aligned_w.toArrayListAligned(.fromByteUnits(32));
     try std.testing.expect(std.mem.Alignment.fromByteUnits(32).check(@intFromPtr(bytes.items.ptr)));
 }

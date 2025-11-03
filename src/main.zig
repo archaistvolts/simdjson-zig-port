@@ -20,7 +20,8 @@ pub fn domMain(allocator: std.mem.Allocator, args: Args) !u8 {
     if (args.filename.len == 0) {
         const stdin = std.fs.File.stdin();
         var buf: [4096]u8 = undefined;
-        var freader = stdin.reader(&buf);
+        var tio: std.Io.Threaded = .init(allocator);
+        var freader = stdin.reader(tio.io(), &buf);
         const input = try freader.interface.allocRemaining(allocator, .limited(std.math.maxInt(u32)));
         parser = try dom.Parser.initFixedBuffer(allocator, input, .{});
     } else {
@@ -44,7 +45,9 @@ pub fn ondemandMain(allocator: std.mem.Allocator, args: Args) !u8 {
     const file = try std.fs.cwd().openFile(args.filename, .{ .mode = .read_only });
     defer file.close();
     var read_buf: [read_buf_cap]u8 = undefined;
-    var freader = file.reader(&read_buf);
+    var tio = std.Io.Threaded.init(allocator);
+    defer tio.deinit();
+    var freader = file.reader(tio.io(), &read_buf);
     var parser = try ondemand.Parser.init(&freader, allocator, args.filename, .{});
     defer parser.deinit();
 
