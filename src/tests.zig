@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const mem = std.mem;
-const allr = testing.allocator;
+const t_gpa = testing.allocator;
 
 const simdjzon = @import("simdjzon");
 const dom = simdjzon.dom;
@@ -15,8 +15,8 @@ const is_win_release_small = builtin.mode == .ReleaseSmall and
     (builtin.target.os.tag == .windows or is_wine);
 
 test "tape build 1" {
-    const input = try std.fs.cwd().readFileAlloc("test/test.json", allr, .unlimited);
-    defer allr.free(input);
+    const input = try std.fs.cwd().readFileAlloc("test/test.json", t_gpa, .unlimited);
+    defer t_gpa.free(input);
     const expecteds = [_]u64{
         TapeType.ROOT.encode_value(37), //  pointing  to 37 (rightafter  last  node) :0
         TapeType.START_OBJECT.encode_value(37 | (8 << 32)), // pointing to 37, length 8  :1
@@ -51,7 +51,7 @@ test "tape build 1" {
         TapeType.ROOT.encode_value(0), //  pointing  to 0 :37
     };
 
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
     defer parser.deinit();
     try parser.parse();
 
@@ -103,14 +103,14 @@ test "tape build 2" {
     const input =
         \\{ "\\\"Nam[{": [ 116,"\\\\" , 234, "true", false ], "t":"\\\""}
     ;
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
     defer parser.deinit();
     try parser.parse();
 }
 
 test "float" {
     {
-        var parser = try dom.Parser.initFixedBuffer(allr, "123.456", .{});
+        var parser = try dom.Parser.initFixedBuffer(t_gpa, "123.456", .{});
         defer parser.deinit();
         try parser.parse();
         try testing.expectEqual(
@@ -127,7 +127,7 @@ test "float" {
         try testing.expectApproxEqAbs(@as(f64, 123.456), d, 0.000000001);
     }
     {
-        var parser = try dom.Parser.initFixedBuffer(allr, "[-0.000000000000000000000000000000000000000000000000000000000000000000000000000001,0.1,0.01]", .{});
+        var parser = try dom.Parser.initFixedBuffer(t_gpa, "[-0.000000000000000000000000000000000000000000000000000000000000000000000000000001,0.1,0.01]", .{});
         defer parser.deinit();
         try parser.parse();
         // for (parser.doc.tape.items) |tape_item, i|
@@ -163,7 +163,7 @@ test "float" {
 }
 
 test "search tape" {
-    var parser = try dom.Parser.initFile(allr, "test/test.json", .{});
+    var parser = try dom.Parser.initFile(t_gpa, "test/test.json", .{});
     defer parser.deinit();
     try parser.parse();
     const ele = parser.element();
@@ -195,7 +195,7 @@ test "search tape" {
 }
 
 test "array of objects" {
-    var parser = try dom.Parser.initFixedBuffer(allr,
+    var parser = try dom.Parser.initFixedBuffer(t_gpa,
         \\[{"a": 1}, {"b": 2}]
     , .{});
     defer parser.deinit();
@@ -211,7 +211,7 @@ test "array of objects" {
 }
 
 test "array of objects 2" {
-    var parser = try dom.Parser.initFixedBuffer(allr,
+    var parser = try dom.Parser.initFixedBuffer(t_gpa,
         \\[{"foo": null, "params": [1,2,4],  "id": 1},
         \\ {"foo": null, "params": [1,2,10], "id": 2}]
     , .{});
@@ -244,7 +244,7 @@ test "json pointer" {
     const input =
         \\{"a": {"b": [1,2,3], "c": 3.1415, "d": true, "e": "e-string", "f": null}}
     ;
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
     defer parser.deinit();
     try parser.parse();
     const b0 = try parser.element().at_pointer("/a/b/0");
@@ -295,7 +295,7 @@ test "get with slice/array" {
         \\[1,2,3,4]
     ;
     var s: [4]u8 = undefined;
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
     defer parser.deinit();
     try parser.parse();
     try parser.element().get(&s);
@@ -312,7 +312,7 @@ test "get with struct - readme" {
     const input =
         \\{"a": 42, "b": "b-string", "c": {"d": 126}}
     ;
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
     defer parser.deinit();
     try parser.parse();
     var s: S = undefined;
@@ -326,7 +326,7 @@ test "at_pointer - readme" {
     const input =
         \\{"a": {"b": [1,2,3]}}
     ;
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
     defer parser.deinit();
     try parser.parse();
     const b0 = try parser.element().at_pointer("/a/b/0");
@@ -353,16 +353,16 @@ test "ondemand get with struct - readme" {
     try tfile.seekTo(0);
     // --- end boilerplate ceremony.
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var tio = std.Io.Threaded.init(allr);
+    var tio = std.Io.Threaded.init(t_gpa);
     defer tio.deinit();
     var src = tfile.reader(tio.io(), &read_buf);
-    var parser = try ondemand.Parser.init(&src, allr, file_name, .{});
+    var parser = try ondemand.Parser.init(&src, t_gpa, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
 
     var s: S = undefined;
-    try doc.get(&s, .{ .allocator = allr });
-    defer allr.free(s.a.b);
+    try doc.get(&s, .{ .allocator = t_gpa });
+    defer t_gpa.free(s.a.b);
     try testing.expectEqualStrings("b-string", s.a.b);
 }
 
@@ -381,10 +381,10 @@ test "ondemand at_pointer - readme" {
     try tfile.seekTo(0);
     // --- end boilerplate ceremony.
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var tio = std.Io.Threaded.init(allr);
+    var tio = std.Io.Threaded.init(t_gpa);
     defer tio.deinit();
     var src = tfile.reader(tio.io(), &read_buf);
-    var parser = try ondemand.Parser.init(&src, allr, file_name, .{});
+    var parser = try ondemand.Parser.init(&src, t_gpa, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
     var b0 = try doc.at_pointer("/a/b/0");
@@ -401,12 +401,12 @@ test "get_alloc integer slice" {
         \\[0,1,2]
     ;
 
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
     defer parser.deinit();
     try parser.parse();
     var s: T = undefined;
-    defer allr.free(s);
-    try parser.element().get_alloc(allr, &s);
+    defer t_gpa.free(s);
+    try parser.element().get_alloc(t_gpa, &s);
 
     try std.testing.expectEqual(@as(usize, 3), s.len);
     for (s, 0..) |item, i| {
@@ -420,12 +420,12 @@ test "get_alloc struct field slice" {
         \\{ "xs": [{"a": 42}, {"a": 42}]}
     ;
 
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
     defer parser.deinit();
     try parser.parse();
     var s: T = undefined;
-    defer allr.free(s.xs);
-    try parser.element().get_alloc(allr, &s);
+    defer t_gpa.free(s.xs);
+    try parser.element().get_alloc(t_gpa, &s);
 
     try std.testing.expectEqual(@as(usize, 2), s.xs.len);
     for (s.xs) |item| {
@@ -443,12 +443,12 @@ test "get_alloc struct field slice more field types" {
         \\]}
     ;
 
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
     defer parser.deinit();
     try parser.parse();
     var s: T = undefined;
-    defer allr.free(s.xs);
-    try parser.element().get_alloc(allr, &s);
+    defer t_gpa.free(s.xs);
+    try parser.element().get_alloc(t_gpa, &s);
 
     try std.testing.expectEqual(@as(usize, 2), s.xs.len);
     for (s.xs) |item| {
@@ -468,7 +468,7 @@ test "dom user defined jsonParse()" {
             out.foo = "foo";
         }
     };
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
     defer parser.deinit();
     try parser.parse();
     var s: T = undefined;
@@ -486,12 +486,12 @@ test "get_alloc slice of struct" {
         \\]
     ;
 
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
     defer parser.deinit();
     try parser.parse();
     var s: T = undefined;
-    defer allr.free(s);
-    try parser.element().get_alloc(allr, &s);
+    defer t_gpa.free(s);
+    try parser.element().get_alloc(t_gpa, &s);
 
     try std.testing.expectEqual(@as(usize, 2), s.len);
     for (s) |item| {
@@ -504,7 +504,7 @@ test "get_string_int64/uint64" {
     const input =
         \\"1234"
     ;
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
     defer parser.deinit();
     try parser.parse();
     {
@@ -521,7 +521,7 @@ test "dom object key iterator" {
     const input =
         \\{"a": {"c": null, "d": 3}, "b": 2}
     ;
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
     defer parser.deinit();
     try parser.parse();
     const ele = parser.element();
@@ -563,14 +563,14 @@ test "ondemand get with struct" {
     try tfile.writeAll(input);
     try tfile.seekTo(0);
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var tio = std.Io.Threaded.init(allr);
+    var tio = std.Io.Threaded.init(t_gpa);
     defer tio.deinit();
     var freader = tfile.reader(tio.io(), &read_buf);
-    var parser = try ondemand.Parser.init(&freader, allr, file_name, .{});
+    var parser = try ondemand.Parser.init(&freader, t_gpa, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
 
-    var arena = std.heap.ArenaAllocator.init(allr);
+    var arena = std.heap.ArenaAllocator.init(t_gpa);
     defer arena.deinit();
     const a = arena.allocator();
     var s: S = undefined;
@@ -590,10 +590,10 @@ test "ondemand at_pointer" {
     try tfile.writeAll(input);
     try tfile.seekTo(0);
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var tio = std.Io.Threaded.init(allr);
+    var tio = std.Io.Threaded.init(t_gpa);
     defer tio.deinit();
     var freader = tfile.reader(tio.io(), &read_buf);
-    var parser = try ondemand.Parser.init(&freader, allr, file_name, .{});
+    var parser = try ondemand.Parser.init(&freader, t_gpa, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
     var b0 = try doc.at_pointer("/a/b/0");
@@ -628,10 +628,10 @@ fn test_ondemand_doc(input: []const u8, expected: *const fn (doc: *ondemand.Docu
     std.debug.assert(input.len == try tfile.write(input));
     try tfile.seekTo(0);
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var tio = std.Io.Threaded.init(allr);
+    var tio = std.Io.Threaded.init(t_gpa);
     defer tio.deinit();
     var freader = tfile.reader(tio.io(), &read_buf);
-    var parser = try ondemand.Parser.init(&freader, allr, &file_name, .{});
+    var parser = try ondemand.Parser.init(&freader, t_gpa, &file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
     try expected(&doc);
@@ -805,8 +805,8 @@ test "ondemand root types" {
     , struct {
         fn func(doc: *ondemand.Document) E!void {
             {
-                const s = try doc.get_string_alloc(allr);
-                defer allr.free(s);
+                const s = try doc.get_string_alloc(t_gpa);
+                defer t_gpa.free(s);
                 try testing.expectEqualStrings("string", s);
             }
             if (is_win_release_small) {
@@ -906,9 +906,9 @@ test "ondemand get struct" {
                 // parse strings or arrays in slices using an allocator
                 const S = struct { a: struct { g: []u8, e: []const u8 } };
                 var s: S = undefined;
-                try doc.get(&s, .{ .allocator = allr });
-                defer allr.free(s.a.g);
-                defer allr.free(s.a.e);
+                try doc.get(&s, .{ .allocator = t_gpa });
+                defer t_gpa.free(s.a.g);
+                defer t_gpa.free(s.a.e);
                 try testing.expectEqualSlices(u8, &.{ 4, 5, 6 }, s.a.g);
                 try testing.expectEqualStrings("e-string", s.a.e);
             }
@@ -921,7 +921,7 @@ test "ondemand get_string_alloc" {
         \\"asdf"
     , struct {
         fn func(doc: *ondemand.Document) E!void {
-            var arena = std.heap.ArenaAllocator.init(allr);
+            var arena = std.heap.ArenaAllocator.init(t_gpa);
             defer arena.deinit();
             const str = try doc.get_string_alloc(arena.allocator());
             try testing.expectEqualStrings("asdf", str);
@@ -932,7 +932,7 @@ test "ondemand get_string_alloc" {
     const overlong_str = "\"" ++ s ** reps ++ "\"";
     try test_ondemand_doc(overlong_str, struct {
         fn func(doc: *ondemand.Document) E!void {
-            const str = doc.get_string_alloc(allr);
+            const str = doc.get_string_alloc(t_gpa);
             try testing.expectError(error.CAPACITY, str);
         }
     }.func);
@@ -1034,12 +1034,12 @@ test "twitter" {
     else
         "test/twitter.json";
     {
-        var parser = try dom.Parser.initFile(allr, output_filename, .{});
+        var parser = try dom.Parser.initFile(t_gpa, output_filename, .{});
         defer parser.deinit();
         try parser.parse();
         try domCheckTweets(&parser);
     }
-    var tio = std.Io.Threaded.init(allr);
+    var tio = std.Io.Threaded.init(t_gpa);
     defer tio.deinit();
     { // initFromReader() / initExistingFromReader()
         var file = try std.fs.cwd().openFile(output_filename, .{});
@@ -1049,7 +1049,7 @@ test "twitter" {
         var parser = parser: {
             var freader = file.reader(tio.io(), &buf);
             // parser has an invalid reference to freader. but that ok since we re-init below.
-            var parser = try dom.Parser.initFromReader(allr, &freader.interface, .{});
+            var parser = try dom.Parser.initFromReader(t_gpa, &freader.interface, .{});
             try parser.parse();
             try domCheckTweets(&parser);
             break :parser parser;
@@ -1071,7 +1071,7 @@ test "twitter" {
         defer file.close();
         var read_buf: [READ_BUF_CAP]u8 = undefined;
         var freader = file.reader(tio.io(), &read_buf);
-        var parser = try ondemand.Parser.init(&freader, allr, output_filename, .{});
+        var parser = try ondemand.Parser.init(&freader, t_gpa, output_filename, .{});
         defer parser.deinit();
         var tweets = try parser.iterate();
         var x = try tweets.at_pointer("/search_metadata/count");
@@ -1089,9 +1089,9 @@ test "Io.Writer.Allocating Aligned" {
     ;
     var reader = std.Io.Reader.fixed(input);
     var bytes: std.ArrayListAlignedUnmanaged(u8, .fromByteUnits(32)) = .{};
-    try bytes.ensureTotalCapacity(allr, 100); // simulate existing allocation
-    defer bytes.deinit(allr);
-    var aligned_w = std.Io.Writer.Allocating.initOwnedSliceAligned(allr, .fromByteUnits(32), bytes.allocatedSlice());
+    try bytes.ensureTotalCapacity(t_gpa, 100); // simulate existing allocation
+    defer bytes.deinit(t_gpa);
+    var aligned_w = std.Io.Writer.Allocating.initOwnedSliceAligned(t_gpa, .fromByteUnits(32), bytes.allocatedSlice());
     _ = try reader.streamRemaining(&aligned_w.writer);
     bytes = aligned_w.toArrayListAligned(.fromByteUnits(32));
     try std.testing.expect(std.mem.Alignment.fromByteUnits(32).check(@intFromPtr(bytes.items.ptr)));
