@@ -353,9 +353,7 @@ test "ondemand get with struct - readme" {
     try tfile.seekTo(0);
     // --- end boilerplate ceremony.
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var tio = std.Io.Threaded.init(t_gpa);
-    defer tio.deinit();
-    var src = tfile.reader(tio.io(), &read_buf);
+    var src = tfile.reader(testing.io, &read_buf);
     var parser = try ondemand.Parser.init(&src, t_gpa, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
@@ -381,9 +379,7 @@ test "ondemand at_pointer - readme" {
     try tfile.seekTo(0);
     // --- end boilerplate ceremony.
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var tio = std.Io.Threaded.init(t_gpa);
-    defer tio.deinit();
-    var src = tfile.reader(tio.io(), &read_buf);
+    var src = tfile.reader(testing.io, &read_buf);
     var parser = try ondemand.Parser.init(&src, t_gpa, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
@@ -563,9 +559,7 @@ test "ondemand get with struct" {
     try tfile.writeAll(input);
     try tfile.seekTo(0);
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var tio = std.Io.Threaded.init(t_gpa);
-    defer tio.deinit();
-    var freader = tfile.reader(tio.io(), &read_buf);
+    var freader = tfile.reader(testing.io, &read_buf);
     var parser = try ondemand.Parser.init(&freader, t_gpa, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
@@ -590,9 +584,7 @@ test "ondemand at_pointer" {
     try tfile.writeAll(input);
     try tfile.seekTo(0);
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var tio = std.Io.Threaded.init(t_gpa);
-    defer tio.deinit();
-    var freader = tfile.reader(tio.io(), &read_buf);
+    var freader = tfile.reader(testing.io, &read_buf);
     var parser = try ondemand.Parser.init(&freader, t_gpa, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
@@ -607,6 +599,7 @@ test "ondemand at_pointer" {
 const E = cmn.Error ||
     error{ TestExpectedEqual, TestUnexpectedResult, TestExpectedApproxEqAbs, TestUnexpectedError, TestExpectedError } ||
     std.fs.File.WriteError;
+
 fn test_ondemand_doc(input: []const u8, expected: *const fn (doc: *ondemand.Document) E!void) E!void {
     // std.debug.print("\n0123456789012345678901234567890123456789\n{s}\n", .{input});
     var tdir = testing.tmpDir(.{});
@@ -628,9 +621,7 @@ fn test_ondemand_doc(input: []const u8, expected: *const fn (doc: *ondemand.Docu
     std.debug.assert(input.len == try tfile.write(input));
     try tfile.seekTo(0);
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var tio = std.Io.Threaded.init(t_gpa);
-    defer tio.deinit();
-    var freader = tfile.reader(tio.io(), &read_buf);
+    var freader = tfile.reader(testing.io, &read_buf);
     var parser = try ondemand.Parser.init(&freader, t_gpa, &file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
@@ -1039,15 +1030,14 @@ test "twitter" {
         try parser.parse();
         try domCheckTweets(&parser);
     }
-    var tio = std.Io.Threaded.init(t_gpa);
-    defer tio.deinit();
+
     { // initFromReader() / initExistingFromReader()
         var file = try std.fs.cwd().openFile(output_filename, .{});
         defer file.close();
 
         var buf: [4096]u8 = undefined;
         var parser = parser: {
-            var freader = file.reader(tio.io(), &buf);
+            var freader = file.reader(testing.io, &buf);
             // parser has an invalid reference to freader. but that ok since we re-init below.
             var parser = try dom.Parser.initFromReader(t_gpa, &freader.interface, .{});
             try parser.parse();
@@ -1059,7 +1049,7 @@ test "twitter" {
         for (0..5) |_| {
             file.close();
             file = try std.fs.cwd().openFile(output_filename, .{});
-            var freader = file.reader(tio.io(), &buf);
+            var freader = file.reader(testing.io, &buf);
             try parser.initExistingFromReader(&freader.interface, .{});
             try testing.expectEqual(@as(usize, 0), parser.indexer.bit_indexer.tail.items.len);
             try parser.parse();
@@ -1070,7 +1060,7 @@ test "twitter" {
         var file = try std.fs.cwd().openFile(output_filename, .{});
         defer file.close();
         var read_buf: [READ_BUF_CAP]u8 = undefined;
-        var freader = file.reader(tio.io(), &read_buf);
+        var freader = file.reader(testing.io, &read_buf);
         var parser = try ondemand.Parser.init(&freader, t_gpa, output_filename, .{});
         defer parser.deinit();
         var tweets = try parser.iterate();
