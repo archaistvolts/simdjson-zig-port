@@ -113,7 +113,7 @@ const Utf8Checker = struct {
     prev_input_block: Chunk = zeros,
     prev_incomplete: Chunk = zeros,
 
-    const zeros: ChunkArr = [1]u8{0} ** chunk_len;
+    const zeros: ChunkArr = @splat(0);
 
     fn prev(comptime N: comptime_int, chunk: Chunk, prev_chunk: Chunk) Chunk {
         comptime assert(0 < N and N < chunk_len);
@@ -150,7 +150,7 @@ const Utf8Checker = struct {
         const OVERLONG_4: u8 = 1 << 6;  // 11110000 1000____
         const u3x32 = @Vector(32, u3);
         const byte_1_high_0 = prev1 >> @as(u3x32,@splat(4));
-        const tbl1 = [16]u8{
+        const tbl1_a = [16]u8{
             // 0_______ ________ <ASCII in byte 1>
             TOO_LONG,               TOO_LONG,  TOO_LONG,                           TOO_LONG,
             TOO_LONG,               TOO_LONG,  TOO_LONG,                           TOO_LONG,
@@ -164,12 +164,13 @@ const Utf8Checker = struct {
             TOO_SHORT | OVERLONG_3 | SURROGATE,
             // 1111____ ________ <four+ byte lead in byte 1>
             TOO_SHORT | TOO_LARGE | TOO_LARGE_1000 | OVERLONG_4,
-        } ** 2;
+        };
+        const tbl1 = tbl1_a ++ tbl1_a;
         const byte_1_high = c.mm256_shuffle_epi8(tbl1, byte_1_high_0);
         const CARRY: u8 = TOO_SHORT | TOO_LONG | TWO_CONTS; // These all have ____ in byte 1 .
         const byte_1_low0 = prev1 & @as(v.u8x32, @splat(0x0F));
 
-        const tbl2 = [16]u8{
+        const tbl2_a = [16]u8{
             // ____0000 ________
             CARRY | OVERLONG_3 | OVERLONG_2 | OVERLONG_4,
             // ____0001 ________
@@ -196,11 +197,12 @@ const Utf8Checker = struct {
             CARRY | TOO_LARGE | TOO_LARGE_1000 | SURROGATE,
             CARRY | TOO_LARGE | TOO_LARGE_1000,
             CARRY | TOO_LARGE | TOO_LARGE_1000,
-        } ** 2;
+        };
+        const tbl2 = tbl2_a ++ tbl2_a;
         const byte_1_low = c.mm256_shuffle_epi8(tbl2, byte_1_low0);
 
         const byte_2_high_0 = input >> @as(u3x32, @splat(4));
-        const tbl3 = [16]u8{
+        const tbl3_a = [16]u8{
             // ________ 0_______ <ASCII in byte 2>
             TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT,
             TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT,
@@ -212,7 +214,8 @@ const Utf8Checker = struct {
             TOO_LONG | OVERLONG_2 | TWO_CONTS | SURROGATE | TOO_LARGE, TOO_LONG | OVERLONG_2 | TWO_CONTS | SURROGATE | TOO_LARGE,
             // ________ 11______
             TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT,
-        } ** 2;
+        };
+        const tbl3 = tbl3_a ++ tbl3_a;
         const byte_2_high = c.mm256_shuffle_epi8(tbl3, byte_2_high_0);
         return (byte_1_high & byte_1_low & byte_2_high);
     }
@@ -432,7 +435,8 @@ const CharacterBlock = struct {
     pub fn classify(input_vec: v.u8x64) CharacterBlock {
         // These lookups rely on the fact that anything < 127 will match the lower 4 bits, which is why
         // we can't use the generic lookup_16.
-        const whitespace_table: v.u8x32 = [16]u8{ ' ', 100, 100, 100, 17, 100, 113, 2, 100, '\t', '\n', 112, 100, '\r', 100, 100 } ** 2;
+        const whitespace_table_a = [16]u8{ ' ', 100, 100, 100, 17, 100, 113, 2, 100, '\t', '\n', 112, 100, '\r', 100, 100 };
+        const whitespace_table: v.u8x32 = whitespace_table_a ++ whitespace_table_a;
 
         // The 6 operators (:,[]{}) have these values:
         //
@@ -453,13 +457,14 @@ const CharacterBlock = struct {
         // NOTE: Due to the | 0x20, this ALSO treats <FF> and <SUB> (control characters 0C and 1A) like ,
         // and :. This gets caught in stage 2, which checks the actual character to ensure the right
         // operators are in the right places.
-        const op_table: v.u8x32 = [16]u8{
+        const op_table_a = [16]u8{
             0, 0, 0, 0,
             0, 0, 0, 0,
             0,   0,   ':', '{', // : = 3A, [ = 5B, { = 7B
             ',', '}', 0,
             0, // , = 2C, ] = 5D, } = 7D
-        } ** 2;
+        };
+        const op_table: v.u8x32 = op_table_a ++ op_table_a;
 
         // We compute whitespace and op separately. If later code only uses one or the
         // other, given the fact that all functions are aggressively inlined, we can
@@ -1521,7 +1526,7 @@ pub const Parser = struct {
             //     cmn.println("{b:0>64} | in_string", .{@bitReverse(block.strings.in_string)});
             // }
         }
-        var read_buf = [1]u8{0x20} ** cmn.STEP_SIZE;
+        var read_buf: [cmn.STEP_SIZE]u8 = @splat(0x20);
         @memcpy(read_buf[0 .. end_pos - pos], parser.bytes.items[pos..end_pos]);
         // std.log.debug("read_buf {d}", .{read_buf});
         try parser.indexer.step(read_buf, parser, pos);
