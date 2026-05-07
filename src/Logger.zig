@@ -16,7 +16,7 @@ const LOG_SMALL_BUFFER_LEN = 10;
 const LOG_INDEX_LEN = 5;
 
 fn pad_with(comptime s: []const u8, comptime pad_byte: u8, comptime len: u8) [len]u8 {
-    var buf = [1]u8{pad_byte} ** len;
+    var buf: [len]u8 = @splat(pad_byte);
     buf[0..s.len].* = s[0..s.len].*;
     return buf;
 }

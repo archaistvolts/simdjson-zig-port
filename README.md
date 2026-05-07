@@ -201,6 +201,8 @@ int main(int argc, char** argv) {
     }
     return 0;
 }
+$ g++ --version
+g++ (GCC) 15.2.1 20260123 (Red Hat 15.2.1-7)
 $ g++ main.cpp simdjson.cpp -o simdjson -O3 -march=native
 $ cd ../..
 $ poop 'zig-out/bin/simdjson zig-out/bin/twitter.json' 'zig-out/bin/simdjzon zig-out/bin/twitter.json'

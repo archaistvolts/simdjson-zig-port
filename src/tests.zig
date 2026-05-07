@@ -280,7 +280,7 @@ test "json pointer" {
     }
     {
         // this contrived example shows you can read string data into slice types other than u8
-        var s = [1]u16{mem.readInt(u16, "xx", .little)} ** 4;
+        var s: [4]u16 = @splat(mem.readInt(u16, "xx", .little));
         try (try parser.element().at_pointer("/a/e")).get(s[0..2]);
         const expected_u16s: [4]u16 = @bitCast(expected);
         try testing.expectEqualSlices(u16, &expected_u16s, &s);
@@ -922,8 +922,14 @@ test "ondemand get_string_alloc" {
     }.func);
     const s = "asdf";
     const reps = ondemand.READ_BUF_CAP / s.len + 100;
-    const overlong_str = "\"" ++ s ** reps ++ "\"";
-    try test_ondemand_doc(overlong_str, struct {
+    var overlong_str: [reps * s.len + 2]u8 = undefined;
+    overlong_str[0] = '"';
+    for (0..reps) |i| {
+        overlong_str[1 + i * 4 ..][0..4].* = s.*;
+    }
+
+    overlong_str[overlong_str.len - 1] = '"';
+    try test_ondemand_doc(&overlong_str, struct {
         fn func(doc: *ondemand.Document) E!void {
             const str = doc.get_string_alloc(t_gpa);
             try testing.expectError(error.CAPACITY, str);
