@@ -1,5 +1,4 @@
 const std = @import("std");
-
 const os = std.os;
 const simdjzon = @import("simdjzon");
 pub const build_options = simdjzon.build_options;
@@ -14,18 +13,17 @@ const Args = struct {
     filename: []const u8 = "",
 };
 
-pub fn domMain(allocator: std.mem.Allocator, args: Args) !u8 {
+pub fn domMain(allocator: std.mem.Allocator, io: std.Io, args: Args) !u8 {
     var parser: dom.Parser = undefined;
 
     if (args.filename.len == 0) {
-        const stdin = std.fs.File.stdin();
+        const stdin = std.Io.File.stdin();
         var buf: [4096]u8 = undefined;
-        var tio: std.Io.Threaded = .init(allocator);
-        var freader = stdin.reader(tio.io(), &buf);
+        var freader = stdin.reader(io, &buf);
         const input = try freader.interface.allocRemaining(allocator, .limited(std.math.maxInt(u32)));
         parser = try dom.Parser.initFixedBuffer(allocator, input, .{});
     } else {
-        parser = try dom.Parser.initFile(allocator, args.filename, .{});
+        parser = try dom.Parser.initFile(allocator, io, args.filename, .{});
     }
     defer parser.deinit();
 
@@ -39,15 +37,13 @@ pub fn domMain(allocator: std.mem.Allocator, args: Args) !u8 {
     return 0;
 }
 
-pub fn ondemandMain(allocator: std.mem.Allocator, args: Args) !u8 {
+pub fn ondemandMain(allocator: std.mem.Allocator, io: std.Io, args: Args) !u8 {
     if (args.filename.len == 0) return error.MissingFilenameArg;
 
-    const file = try std.fs.cwd().openFile(args.filename, .{ .mode = .read_only });
-    defer file.close();
+    const file = try std.Io.Dir.cwd().openFile(io, args.filename, .{ .mode = .read_only });
+    defer file.close(io);
     var read_buf: [read_buf_cap]u8 = undefined;
-    var tio = std.Io.Threaded.init(allocator);
-    defer tio.deinit();
-    var freader = file.reader(tio.io(), &read_buf);
+    var freader = file.reader(io, &read_buf);
     var parser = try ondemand.Parser.init(&freader, allocator, args.filename, .{});
     defer parser.deinit();
 
@@ -128,14 +124,14 @@ fn usage(exename: []const u8) void {
     , .{exename});
 }
 
-pub fn main() !u8 {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+pub fn main(init: std.process.Init) !u8 {
+    var arenaa = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arenaa.deinit();
+    const arena = arenaa.allocator();
     var buf: [4096]u8 = undefined;
-    var stdoutw = std.fs.File.stdout().writer(&buf);
+    var stdoutw = std.Io.File.stdout().writer(init.io, &buf);
     const stdout = &stdoutw.interface;
-    var args = try std.process.argsAlloc(allocator);
+    var args = try init.minimal.args.toSlice(arena);
     const exename = args[0];
     args = args[1..];
     var aargs: Args = .{};
@@ -152,19 +148,19 @@ pub fn main() !u8 {
         }
     }
 
-    var timer: std.time.Timer = if (aargs.verbose)
-        try std.time.Timer.start()
+    var timer: std.Io.Timestamp = if (aargs.verbose)
+        .now(init.io, .real)
     else
         undefined;
 
     const result = if (build_options.ondemand)
-        ondemandMain(allocator, aargs)
+        ondemandMain(arena, init.io, aargs)
     else
-        domMain(allocator, aargs);
+        domMain(arena, init.io, aargs);
 
     if (result) |_| {
         if (aargs.verbose) {
-            try stdout.print("valid parse in {D}\n", .{timer.lap()});
+            try stdout.print("valid parse in {f}\n", .{timer.durationTo(.now(init.io, .real))});
             try stdout.flush();
         }
     } else |e| {

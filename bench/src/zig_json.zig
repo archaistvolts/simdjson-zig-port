@@ -15,7 +15,7 @@ pub fn main() !void {
 
     var parser = json.Parser.init(allocator, false);
     for (args[1..]) |arg| {
-        var content = try std.fs.cwd().readFileAlloc(allocator, arg, std.math.maxInt(u32));
+        const content = try std.Io.Dir.cwd().readFileAlloc(allocator, arg, std.math.maxInt(u32));
         defer allocator.free(content);
 
         var tree = try parser.parse(content);

@@ -13,10 +13,14 @@ pub const u8xstep_size = std.meta.Vector(STEP_SIZE, u8);
 pub const STREAMING = false;
 pub const SIMDJSON_PADDING = 32;
 
-pub const log_level: std.log.Level = std.enums.nameCast(std.log.Level, if (@hasDecl(root, "build_options"))
-    root.build_options.log_level
-else
-    @import("build_options").log_level);
+pub const log_level: std.log.Level =
+    switch (if (@hasDecl(root, "build_options")) // convert between log levels
+        root.build_options.log_level
+    else
+        @import("build_options").log_level) {
+        inline else => |l| @field(std.log.Level, @tagName(l)),
+    };
+
 pub var debug = log_level == .debug;
 pub fn println(comptime fmt: []const u8, args: anytype) void {
     print(fmt ++ "\n", args);
@@ -43,10 +47,10 @@ pub inline fn ptr_diff(comptime T: type, p1: anytype, p2: anytype) !T {
 }
 
 pub const FileError =
-    std.fs.File.OpenError ||
-    std.fs.File.ReadError ||
-    std.fs.File.SeekError ||
-    std.fs.File.Reader.SizeError;
+    std.Io.File.OpenError ||
+    std.Io.File.Reader.Error ||
+    std.Io.File.SeekError ||
+    std.Io.File.Reader.SizeError;
 
 pub const Error =
     std.mem.Allocator.Error ||
@@ -151,5 +155,5 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 const Writer = std.Io.Writer;
 const assert = std.debug.assert;
-const File = std.fs.File;
+const File = std.Io.File;
 const Limit = std.Io.Limit;

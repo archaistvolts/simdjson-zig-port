@@ -1,5 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
+const Io = std.Io;
 const os = std.os;
 const assert = std.debug.assert;
 const builtin = @import("builtin");
@@ -17,8 +18,8 @@ const string_parsing = @import("string_parsing.zig");
 const v = @import("vector_types.zig");
 
 pub const Document = struct {
-    tape: std.ArrayListUnmanaged(u64) = .{},
-    string_buf: std.ArrayListUnmanaged(u8) = .{},
+    tape: std.ArrayListUnmanaged(u64) = .empty,
+    string_buf: std.ArrayListUnmanaged(u8) = .empty,
 
     pub fn allocate(document: *Document, allocator: mem.Allocator, capacity: u32) !void {
         if (capacity == 0) return;
@@ -47,7 +48,7 @@ pub const Document = struct {
 };
 
 const BitIndexer = struct {
-    tail: std.ArrayListUnmanaged(u32) = .{},
+    tail: std.ArrayListUnmanaged(u32) = .empty,
 
     // flatten out values in 'bits' assuming that they are are to have values of idx
     // plus their position in the bitvector, and store these indexes at
@@ -1048,11 +1049,12 @@ pub const TapeType = enum(u8) {
     FALSE = 'f',
     NULL = 'n',
     INVALID = 'i',
+    _,
     pub fn as_u64(tt: TapeType) u64 {
         return @as(u64, @intFromEnum(tt)) << 56;
     }
     pub fn from_u64(x: u64) TapeType {
-        return std.meta.intToEnum(TapeType, (x & 0xff00000000000000) >> 56) catch .INVALID;
+        return @enumFromInt((x & 0xff00000000000000) >> 56);
     }
     pub fn encode_value(tt: TapeType, value: u64) u64 {
         assert(value <= std.math.maxInt(u56));
@@ -1285,23 +1287,23 @@ pub const Parser = struct {
     open_containers: std.MultiArrayList(OpenContainerInfo),
     max_depth: u16,
     n_structural_indexes: u32 = 0,
-    bytes: std.ArrayListAlignedUnmanaged(u8, cmn.chunk_align) = .{},
+    bytes: std.ArrayListAlignedUnmanaged(u8, cmn.chunk_align) = .empty,
     input_len: u32 = 0,
 
     pub const Options = struct {
         max_depth: u16 = cmn.DEFAULT_MAX_DEPTH,
     };
 
-    pub fn initFile(allocator: mem.Allocator, filename: []const u8, options: Options) !Parser {
+    pub fn initFile(allocator: mem.Allocator, io: Io, filename: []const u8, options: Options) !Parser {
         var parser = Parser{
             .filename = filename,
             .allocator = allocator,
             .doc = .{},
             .indexer = .{},
-            .open_containers = .{},
+            .open_containers = .empty,
             .max_depth = options.max_depth,
         };
-        parser.input_len = try parser.read_file(filename);
+        parser.input_len = try parser.read_file(io, filename);
 
         try parser.finishInit(options);
         return parser;
@@ -1315,8 +1317,8 @@ pub const Parser = struct {
             .allocator = allocator,
             .doc = .{},
             .indexer = .{},
-            .bytes = .{},
-            .open_containers = .{},
+            .bytes = .empty,
+            .open_containers = .empty,
             .max_depth = options.max_depth,
         };
         try parser.initExisting(input, options);
@@ -1330,8 +1332,8 @@ pub const Parser = struct {
             .allocator = allocator,
             .doc = .{},
             .indexer = .{},
-            .bytes = .{},
-            .open_containers = .{},
+            .bytes = .empty,
+            .open_containers = .empty,
             .max_depth = options.max_depth,
         };
         errdefer parser.deinit();
@@ -1354,15 +1356,16 @@ pub const Parser = struct {
     // initExistingFromReader() but i'm leaving it as this method is slightly
     // more performant.  this is because it doesn't need to realloc for the
     // padding bytes as the total length is known ahead of time.
-    fn read_file(parser: *Parser, filename: []const u8) !u32 {
-        var f = try std.fs.cwd().openFile(filename, .{ .mode = .read_only });
-        defer f.close();
-        const len = std.math.cast(u32, try f.getEndPos()) orelse return error.Overflow;
+    fn read_file(parser: *Parser, io: Io, filename: []const u8) !u32 {
+        var f = try Io.Dir.cwd().openFile(io, filename, .{ .mode = .read_only });
+        defer f.close(io);
+
+        const len = std.math.cast(u32, try f.length(io)) orelse return error.Overflow;
         if (parser.bytes.items.len < len) {
             const paddedlen = try std.math.add(u32, len, cmn.SIMDJSON_PADDING);
             try parser.bytes.ensureTotalCapacity(parser.allocator, paddedlen);
             parser.bytes.items.len = paddedlen;
-            const nbytes = try f.read(parser.bytes.items);
+            const nbytes = try f.readStreaming(io, &.{parser.bytes.items});
             if (nbytes < len) return error.IO_ERROR;
         }
         return len;
@@ -2032,6 +2035,7 @@ pub const Element = struct {
             .END_OBJECT,
             .INVALID,
             .NULL,
+            _,
             => error.INCORRECT_TYPE,
             .START_ARRAY => Value{ .ARRAY = .{ .tape = ele.tape } },
             .START_OBJECT => Value{ .OBJECT = .{ .tape = ele.tape } },

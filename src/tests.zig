@@ -1,7 +1,9 @@
 const std = @import("std");
 const testing = std.testing;
 const mem = std.mem;
+const Io = std.Io;
 const t_gpa = testing.allocator;
+const io = testing.io;
 
 const simdjzon = @import("simdjzon");
 const dom = simdjzon.dom;
@@ -15,7 +17,7 @@ const is_win_release_small = builtin.mode == .ReleaseSmall and
     (builtin.target.os.tag == .windows or is_wine);
 
 test "tape build 1" {
-    const input = try std.fs.cwd().readFileAlloc("test/test.json", t_gpa, .unlimited);
+    const input = try Io.Dir.cwd().readFileAlloc(io, "test/test.json", t_gpa, .unlimited);
     defer t_gpa.free(input);
     const expecteds = [_]u64{
         TapeType.ROOT.encode_value(37), //  pointing  to 37 (rightafter  last  node) :0
@@ -163,7 +165,7 @@ test "float" {
 }
 
 test "search tape" {
-    var parser = try dom.Parser.initFile(t_gpa, "test/test.json", .{});
+    var parser = try dom.Parser.initFile(t_gpa, io, "test/test.json", .{});
     defer parser.deinit();
     try parser.parse();
     const ele = parser.element();
@@ -266,13 +268,13 @@ test "json pointer" {
     try (try parser.element().at_pointer("/a/b/2")).get(&u);
     try testing.expectEqual(@as(u64, 3), u);
     {
-        var s = [1]u8{'x'} ** 8;
+        var s: [8]u8 = @splat('x');
         try (try parser.element().at_pointer("/a/e")).get(&s);
         try testing.expectEqualStrings("e-string", &s);
     }
     const expected: [8]u8 = "e-stxxxx".*;
     {
-        var s = [1]u8{'x'} ** 8;
+        var s: [8]u8 = @splat('x');
         try (try parser.element().at_pointer("/a/e")).get(s[0..4]);
         try testing.expectEqualStrings(&expected, &s);
     }
@@ -312,7 +314,7 @@ test "get with struct - readme" {
     const input =
         \\{"a": 42, "b": "b-string", "c": {"d": 126}}
     ;
-    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(testing.allocator, input, .{});
     defer parser.deinit();
     try parser.parse();
     var s: S = undefined;
@@ -326,11 +328,17 @@ test "at_pointer - readme" {
     const input =
         \\{"a": {"b": [1,2,3]}}
     ;
-    var parser = try dom.Parser.initFixedBuffer(t_gpa, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(testing.allocator, input, .{});
     defer parser.deinit();
     try parser.parse();
     const b0 = try parser.element().at_pointer("/a/b/0");
     try testing.expectEqual(@as(i64, 1), try b0.get_int64());
+}
+
+fn writeTmpFile(tdir: testing.TmpDir, file_name: []const u8, input: []const u8) !void {
+    const tfile = try tdir.dir.createFile(io, file_name, .{});
+    defer tfile.close(io);
+    try tfile.writePositionalAll(io, input, 0);
 }
 
 // const ondemand = @import("simdjzon").ondemand;
@@ -341,26 +349,26 @@ test "ondemand get with struct - readme" {
     const input =
         \\{"a": {"b": "b-string"}}
     ;
-    // TODO add ondemand.initFileReader(file, input, buf) or something to reduce boilerplate
-    // ondemand api requires a seekable file.
-    // --- begin boilerplate ceremony.  this can usually be replaced with just opening a file
     const file_name = "ondemand_get_with_struct_readme";
     var tdir = testing.tmpDir(.{});
     defer tdir.cleanup();
-    const tfile = try tdir.dir.createFile(file_name, .{ .read = true });
-    defer tfile.close();
-    try tfile.writeAll(input);
-    try tfile.seekTo(0);
-    // --- end boilerplate ceremony.
+    { // write file
+        const tfile = try tdir.dir.createFile(io, file_name, .{});
+        defer tfile.close(io);
+        try tfile.writePositionalAll(io, input, 0);
+    }
+    // TODO add ondemand.initFileReader(file, input, buf) or something to reduce boilerplate
+    // ondemand api requires a seekable file.
+    const tfile = try tdir.dir.openFile(io, file_name, .{});
     var read_buf: [READ_BUF_CAP]u8 = undefined;
     var src = tfile.reader(testing.io, &read_buf);
-    var parser = try ondemand.Parser.init(&src, t_gpa, file_name, .{});
+    var parser = try ondemand.Parser.init(&src, testing.allocator, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
 
     var s: S = undefined;
-    try doc.get(&s, .{ .allocator = t_gpa });
-    defer t_gpa.free(s.a.b);
+    try doc.get(&s, .{ .allocator = testing.allocator });
+    defer testing.allocator.free(s.a.b);
     try testing.expectEqualStrings("b-string", s.a.b);
 }
 
@@ -369,18 +377,18 @@ test "ondemand at_pointer - readme" {
         \\{"a": {"b": [1,2,3]}}
     ;
     // ondemand api requires a seekable file.
-    // --- begin boilerplate ceremony.  this can usually be replaced with just opening a file
     const file_name = "ondemand_at_pointer_readme";
     var tdir = testing.tmpDir(.{});
     defer tdir.cleanup();
-    const tfile = try tdir.dir.createFile(file_name, .{ .read = true });
-    defer tfile.close();
-    try tfile.writeAll(input);
-    try tfile.seekTo(0);
-    // --- end boilerplate ceremony.
+    { // write file
+        const tfile = try tdir.dir.createFile(io, file_name, .{});
+        defer tfile.close(io);
+        try tfile.writePositionalAll(io, input, 0);
+    }
+    const tfile = try tdir.dir.openFile(io, file_name, .{});
     var read_buf: [READ_BUF_CAP]u8 = undefined;
     var src = tfile.reader(testing.io, &read_buf);
-    var parser = try ondemand.Parser.init(&src, t_gpa, file_name, .{});
+    var parser = try ondemand.Parser.init(&src, testing.allocator, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
     var b0 = try doc.at_pointer("/a/b/0");
@@ -554,10 +562,8 @@ test "ondemand get with struct" {
     const file_name = "ondemand_get_with_struct";
     var tdir = testing.tmpDir(.{});
     defer tdir.cleanup();
-    const tfile = try tdir.dir.createFile(file_name, .{ .read = true });
-    defer tfile.close();
-    try tfile.writeAll(input);
-    try tfile.seekTo(0);
+    try writeTmpFile(tdir, file_name, input);
+    const tfile = try tdir.dir.openFile(io, file_name, .{});
     var read_buf: [READ_BUF_CAP]u8 = undefined;
     var freader = tfile.reader(testing.io, &read_buf);
     var parser = try ondemand.Parser.init(&freader, t_gpa, file_name, .{});
@@ -579,10 +585,8 @@ test "ondemand at_pointer" {
     var tdir = testing.tmpDir(.{});
     defer tdir.cleanup();
     const file_name = "ondemand_at_pointer";
-    const tfile = try tdir.dir.createFile(file_name, .{ .read = true });
-    defer tfile.close();
-    try tfile.writeAll(input);
-    try tfile.seekTo(0);
+    try writeTmpFile(tdir, file_name, input);
+    const tfile = try tdir.dir.openFile(io, file_name, .{});
     var read_buf: [READ_BUF_CAP]u8 = undefined;
     var freader = tfile.reader(testing.io, &read_buf);
     var parser = try ondemand.Parser.init(&freader, t_gpa, file_name, .{});
@@ -598,7 +602,7 @@ test "ondemand at_pointer" {
 
 const E = cmn.Error ||
     error{ TestExpectedEqual, TestUnexpectedResult, TestExpectedApproxEqAbs, TestUnexpectedError, TestExpectedError } ||
-    std.fs.File.WriteError;
+    Io.File.Writer.Error;
 
 fn test_ondemand_doc(input: []const u8, expected: *const fn (doc: *ondemand.Document) E!void) E!void {
     // std.debug.print("\n0123456789012345678901234567890123456789\n{s}\n", .{input});
@@ -607,7 +611,7 @@ fn test_ondemand_doc(input: []const u8, expected: *const fn (doc: *ondemand.Docu
     // create file_name with 10 random chars 'test_ondemand_doc_XXXXXXXXXX'.
     // this seems to prevent a bug where the same file is used in multiple tests.
     var seed: u64 = undefined;
-    try std.posix.getrandom(std.mem.asBytes(&seed));
+    io.random(std.mem.asBytes(&seed));
     var prng = std.Random.DefaultPrng.init(seed);
     const random = prng.random();
     const file_name_prefix = "test_ondemand_doc_";
@@ -616,10 +620,8 @@ fn test_ondemand_doc(input: []const u8, expected: *const fn (doc: *ondemand.Docu
     for (file_name[file_name_prefix.len..]) |*c| {
         c.* = alphabet[random.intRangeLessThan(u8, 0, alphabet.len)];
     }
-    const tfile = try tdir.dir.createFile(&file_name, .{ .read = true });
-    defer tfile.close();
-    std.debug.assert(input.len == try tfile.write(input));
-    try tfile.seekTo(0);
+    try writeTmpFile(tdir, &file_name, input);
+    const tfile = try tdir.dir.openFile(io, &file_name, .{});
     var read_buf: [READ_BUF_CAP]u8 = undefined;
     var freader = tfile.reader(testing.io, &read_buf);
     var parser = try ondemand.Parser.init(&freader, t_gpa, &file_name, .{});
@@ -960,6 +962,7 @@ test "ondemand array iteration nested 2" {
 }
 
 test "ondemand edge cases" {
+
     // This is a sneaky case where TokenIterator.buf could have 'null' when read only moves ahead by 1
     try test_ondemand_doc(
         \\[nul]
@@ -1025,15 +1028,15 @@ test "twitter" {
     else
         "test/twitter.json";
     {
-        var parser = try dom.Parser.initFile(t_gpa, output_filename, .{});
+        var parser = try dom.Parser.initFile(t_gpa, io, output_filename, .{});
         defer parser.deinit();
         try parser.parse();
         try domCheckTweets(&parser);
     }
 
     { // initFromReader() / initExistingFromReader()
-        var file = try std.fs.cwd().openFile(output_filename, .{});
-        defer file.close();
+        var file = try Io.Dir.cwd().openFile(io, output_filename, .{});
+        defer file.close(io);
 
         var buf: [4096]u8 = undefined;
         var parser = parser: {
@@ -1047,8 +1050,8 @@ test "twitter" {
         defer parser.deinit();
 
         for (0..5) |_| {
-            file.close();
-            file = try std.fs.cwd().openFile(output_filename, .{});
+            file.close(io);
+            file = try Io.Dir.cwd().openFile(io, output_filename, .{});
             var freader = file.reader(testing.io, &buf);
             try parser.initExistingFromReader(&freader.interface, .{});
             try testing.expectEqual(@as(usize, 0), parser.indexer.bit_indexer.tail.items.len);
@@ -1057,8 +1060,8 @@ test "twitter" {
         }
     }
     {
-        var file = try std.fs.cwd().openFile(output_filename, .{});
-        defer file.close();
+        var file = try Io.Dir.cwd().openFile(io, output_filename, .{});
+        defer file.close(io);
         var read_buf: [READ_BUF_CAP]u8 = undefined;
         var freader = file.reader(testing.io, &read_buf);
         var parser = try ondemand.Parser.init(&freader, t_gpa, output_filename, .{});
@@ -1078,7 +1081,7 @@ test "Io.Writer.Allocating Aligned" {
         \\ {"foo": null, "params": [1,2,12], "id": 4}]
     ;
     var reader = std.Io.Reader.fixed(input);
-    var bytes: std.ArrayListAlignedUnmanaged(u8, .fromByteUnits(32)) = .{};
+    var bytes: std.ArrayListAlignedUnmanaged(u8, .fromByteUnits(32)) = .empty;
     try bytes.ensureTotalCapacity(t_gpa, 100); // simulate existing allocation
     defer bytes.deinit(t_gpa);
     var aligned_w = std.Io.Writer.Allocating.initOwnedSliceAligned(t_gpa, .fromByteUnits(32), bytes.allocatedSlice());

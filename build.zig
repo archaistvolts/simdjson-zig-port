@@ -41,6 +41,7 @@ pub fn build(b: *std.Build) !void {
         .imports = &.{
             .{ .name = "build_options", .module = options_mod },
         },
+        .target = target,
     });
 
     var main_tests = b.addTest(.{
@@ -99,4 +100,9 @@ pub fn build(b: *std.Build) !void {
     if (b.args) |args| run_twitter_bench.addArgs(args);
     const run_twitter_bench_step = b.step("twitter-bench", "Run the twitter-bench");
     run_twitter_bench_step.dependOn(&run_twitter_bench.step);
+
+    const exe_check = b.addExecutable(.{ .name = "check", .root_module = mod });
+    const check = b.step("check", "Check if everything compiles");
+    check.dependOn(&exe_check.step);
+    check.dependOn(test_step);
 }

@@ -129,7 +129,7 @@ pub const Value = struct {
                                     if (options.allocator) |allocator| {
                                         switch (try val.get_type()) {
                                             .array => {
-                                                var list = std.ArrayListUnmanaged(std.meta.Child(C)){};
+                                                var list = std.ArrayListUnmanaged(std.meta.Child(C)).empty;
                                                 var arr = try val.get_array();
                                                 var iter = arr.iterator();
                                                 while (try iter.next()) |arr_ele_| {
@@ -1329,7 +1329,7 @@ pub const Document = struct {
 
 pub const Parser = struct {
     parser: dom.Parser,
-    src: *std.fs.File.Reader,
+    src: *std.Io.File.Reader,
     /// result of src.read() - number of bytes read from src
     read_buf_len: u16 = 0,
     /// src index of the start of the buffer.  set to index[0] each src.read()
@@ -1337,7 +1337,7 @@ pub const Parser = struct {
     log: Logger = .{ .depth = 0 },
 
     pub fn init(
-        src: *std.fs.File.Reader,
+        src: *std.Io.File.Reader,
         allocator: mem.Allocator,
         filename: []const u8,
         options: dom.Parser.Options,
@@ -1349,7 +1349,7 @@ pub const Parser = struct {
                 .filename = filename,
                 .doc = .{},
                 .indexer = .{},
-                .open_containers = .{},
+                .open_containers = .empty,
                 .max_depth = options.max_depth,
             },
             .src = src,

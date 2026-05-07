@@ -4,15 +4,16 @@ const dom = @import("simdjzon").dom;
 
 pub const read_buf_cap = 4096;
 
-pub fn main() !u8 {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-    const args = try std.process.argsAlloc(allocator);
+pub fn main(init: std.process.Init) !u8 {
+    var arenastate = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arenastate.deinit();
+    const arena = arenastate.allocator();
+
+    const args = try init.minimal.args.toSlice(arena);
     if (args.len != 2) {
         std.debug.print("USAGE: ./simdjson <file.json>\n", .{});
     }
-    var parser = try dom.Parser.initFile(allocator, args[1], .{});
+    var parser = try dom.Parser.initFile(arena, init.io, args[1], .{});
     defer parser.deinit();
     parser.parse() catch |err| {
         std.log.err("parse failed. {s}", .{@errorName(err)});

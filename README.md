@@ -91,7 +91,7 @@ test "get with struct - readme" {
     const input =
         \\{"a": 42, "b": "b-string", "c": {"d": 126}}
     ;
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(testing.allocator, input, .{});
     defer parser.deinit();
     try parser.parse();
     var s: S = undefined;
@@ -105,7 +105,7 @@ test "at_pointer - readme" {
     const input =
         \\{"a": {"b": [1,2,3]}}
     ;
-    var parser = try dom.Parser.initFixedBuffer(allr, input, .{});
+    var parser = try dom.Parser.initFixedBuffer(testing.allocator, input, .{});
     defer parser.deinit();
     try parser.parse();
     const b0 = try parser.element().at_pointer("/a/b/0");
@@ -123,45 +123,45 @@ test "ondemand get with struct - readme" {
     const input =
         \\{"a": {"b": "b-string"}}
     ;
-    // ondemand api requires a seekable file.
-    // --- begin boilerplate ceremony.  this can usually be replaced with just opening a file
     const file_name = "ondemand_get_with_struct_readme";
     var tdir = testing.tmpDir(.{});
     defer tdir.cleanup();
-    const tfile = try tdir.dir.createFile(file_name, .{ .read = true });
-    defer tfile.close();
-    try tfile.writeAll(input);
-    try tfile.seekTo(0);
-    // --- end boilerplate ceremony.
+    { // write file
+        const tfile = try tdir.dir.createFile(io, file_name, .{});
+        defer tfile.close(io);
+        try tfile.writePositionalAll(io, input, 0);
+    }
+    // note: ondemand api requires a seekable file.
+    const tfile = try tdir.dir.openFile(io, file_name, .{});
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var src = tfile.reader(&read_buf);
-    var parser = try ondemand.Parser.init(&src, allr, file_name, .{});
+    var src = tfile.reader(testing.io, &read_buf);
+    var parser = try ondemand.Parser.init(&src, testing.allocator, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
 
     var s: S = undefined;
-    try doc.get(&s, .{ .allocator = allr });
-    defer allr.free(s.a.b);
+    try doc.get(&s, .{ .allocator = testing.allocator });
+    defer testing.allocator.free(s.a.b);
     try testing.expectEqualStrings("b-string", s.a.b);
 }
 
-test "ondemand at_pointer - readme" {
+
     const input =
         \\{"a": {"b": [1,2,3]}}
     ;
     // ondemand api requires a seekable file.
-    // --- begin boilerplate ceremony.  this can usually be replaced with just opening a file
     const file_name = "ondemand_at_pointer_readme";
     var tdir = testing.tmpDir(.{});
     defer tdir.cleanup();
-    const tfile = try tdir.dir.createFile(file_name, .{ .read = true });
-    defer tfile.close();
-    try tfile.writeAll(input);
-    try tfile.seekTo(0);
-    // --- end boilerplate ceremony.
+    { // write file
+        const tfile = try tdir.dir.createFile(io, file_name, .{});
+        defer tfile.close(io);
+        try tfile.writePositionalAll(io, input, 0);
+    }
+    const tfile = try tdir.dir.openFile(io, file_name, .{});
     var read_buf: [READ_BUF_CAP]u8 = undefined;
-    var src = tfile.reader(&read_buf);
-    var parser = try ondemand.Parser.init(&src, allr, file_name, .{});
+    var src = tfile.reader(testing.io, &read_buf);
+    var parser = try ondemand.Parser.init(&src, testing.allocator, file_name, .{});
     defer parser.deinit();
     var doc = try parser.iterate();
     var b0 = try doc.at_pointer("/a/b/0");
@@ -173,7 +173,7 @@ test "ondemand at_pointer - readme" {
 ## parsing/validating twitter.json (630Kb)
 ### simdjson
 
-### benchmark vs simdjson - 8/25/25
+### benchmark vs simdjson - 5/7/26
 ```console
 $ cd zig-out/bin/
 $ wget https://raw.githubusercontent.com/simdjson/simdjson/master/singleheader/simdjson.h https://raw.githubus
@@ -204,24 +204,24 @@ int main(int argc, char** argv) {
 $ g++ main.cpp simdjson.cpp -o simdjson -O3 -march=native
 $ cd ../..
 $ poop 'zig-out/bin/simdjson zig-out/bin/twitter.json' 'zig-out/bin/simdjzon zig-out/bin/twitter.json'
-Benchmark 1 (2052 runs): zig-out/bin/simdjson zig-out/bin/twitter.json
+Benchmark 1 (2054 runs): zig-out/bin/simdjson zig-out/bin/twitter.json
   measurement          mean ± σ            min … max           outliers         delta
-  wall_time          2.39ms ±  162us    1.84ms … 3.22ms         45 ( 2%)        0%
-  peak_rss           5.13MB ± 80.8KB    4.76MB … 5.37MB         12 ( 1%)        0%
-  cpu_cycles         2.35M  ± 97.3K     2.25M  … 3.64M         189 ( 9%)        0%
-  instructions       5.27M  ± 4.22      5.27M  … 5.27M          93 ( 5%)        0%
-  cache_references    151K  ± 4.36K      134K  …  217K         195 (10%)        0%
-  cache_misses       24.3K  ± 1.45K     19.2K  … 31.4K          78 ( 4%)        0%
-  branch_misses      21.1K  ±  675      18.9K  … 23.0K           3 ( 0%)        0%
-Benchmark 2 (3093 runs): zig-out/bin/simdjzon zig-out/bin/twitter.json
+  wall_time          2.39ms ±  184us    1.86ms … 4.15ms         72 ( 4%)        0%
+  peak_rss           5.22MB ±  101KB    4.85MB … 5.58MB        300 (15%)        0%
+  cpu_cycles         2.39M  ± 89.1K     2.26M  … 3.39M         153 ( 7%)        0%
+  instructions       5.28M  ± 4.24      5.28M  … 5.28M          83 ( 4%)        0%
+  cache_references    154K  ± 2.77K      150K  …  192K         107 ( 5%)        0%
+  cache_misses       24.1K  ± 1.38K     20.8K  … 32.1K          50 ( 2%)        0%
+  branch_misses      21.5K  ±  647      19.0K  … 23.7K           4 ( 0%)        0%
+Benchmark 2 (2355 runs): zig-out/bin/simdjzon zig-out/bin/twitter.json
   measurement          mean ± σ            min … max           outliers         delta
-  wall_time          1.58ms ±  128us    1.17ms … 2.16ms         56 ( 2%)        ⚡- 34.0% ±  0.3%
-  peak_rss           1.54MB ± 57.6KB    1.31MB … 1.57MB        764 (25%)        ⚡- 70.0% ±  0.1%
-  cpu_cycles         1.64M  ± 86.6K     1.56M  … 2.43M         369 (12%)        ⚡- 30.2% ±  0.2%
-  instructions       4.53M  ± 0.81      4.53M  … 4.53M         107 ( 3%)        ⚡- 14.1% ±  0.0%
-  cache_references   80.3K  ± 1.62K     72.8K  …  109K         155 ( 5%)        ⚡- 46.8% ±  0.1%
-  cache_misses       2.60K  ±  894      1.36K  … 7.94K          58 ( 2%)        ⚡- 89.3% ±  0.3%
-  branch_misses      5.14K  ±  655      3.38K  … 7.68K          20 ( 1%)        ⚡- 75.6% ±  0.2%
+  wall_time          2.08ms ±  160us    1.67ms … 3.17ms         46 ( 2%)        ⚡- 12.9% ±  0.4%
+  peak_rss           2.35MB ± 72.3KB    1.97MB … 2.39MB          2 ( 0%)        ⚡- 55.0% ±  0.1%
+  cpu_cycles         1.97M  ± 69.1K     1.88M  … 2.83M         139 ( 6%)        ⚡- 17.5% ±  0.2%
+  instructions       5.37M  ± 2.57      5.37M  … 5.37M          92 ( 4%)        💩+  1.7% ±  0.0%
+  cache_references   98.9K  ± 2.69K     95.0K  …  148K          21 ( 1%)        ⚡- 35.8% ±  0.1%
+  cache_misses       5.52K  ± 1.72K     2.43K  … 11.1K           4 ( 0%)        ⚡- 77.1% ±  0.4%
+  branch_misses      7.02K  ±  692      5.11K  … 9.10K           1 ( 0%)        ⚡- 67.4% ±  0.2%
 ```
 
 ### timed against simdjson, go, nim, zig std lib
@@ -235,4 +235,3 @@ Validation times for several large json files.  Created with [benchmark_and_plot
 Results of running simdjson and simdjzon through [JSONTestSuite](https://github.com/nst/JSONTestSuite).  Results are equal as of 8/7/21
 
 ![results](https://github.com/travisstaloch/simdjson-zig/blob/media/JSONTestSuiteResults.png)
-
