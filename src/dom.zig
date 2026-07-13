@@ -1891,9 +1891,9 @@ pub const Element = struct {
                                 switch (ele.tape.tape_ref_type()) {
                                     .START_OBJECT => {
                                         var obj = ele.get_object() catch unreachable;
-                                        inline for (std.meta.fields(C)) |field| {
-                                            if (obj.at_key(field.name)) |obj_ele|
-                                                try obj_ele.jsonParse(&@field(out, field.name), options);
+                                        inline for (comptime std.meta.fieldNames(C)) |field_name| {
+                                            if (obj.at_key(field_name)) |obj_ele|
+                                                try obj_ele.jsonParse(&@field(out, field_name), options);
                                         }
                                     },
                                     else => return error.INCORRECT_TYPE,

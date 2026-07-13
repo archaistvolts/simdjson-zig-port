@@ -16,6 +16,6 @@ pub inline fn is_valid_ull_atom(value: [*]const u8) bool {
     return is_valid_atom(value, 3, atom_ull);
 }
 
-pub inline fn is_valid_atom(value: [*]const u8, comptime len: u8, atom: std.meta.Int(.unsigned, len * 8)) bool {
-    return std.mem.readInt(std.meta.Int(.unsigned, len * 8), value[0..len], .little) == atom;
+pub inline fn is_valid_atom(value: [*]const u8, comptime len: u8, atom: @Int(.unsigned, len * 8)) bool {
+    return std.mem.readInt(@Int(.unsigned, len * 8), value[0..len], .little) == atom;
 }

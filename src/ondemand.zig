@@ -152,17 +152,17 @@ pub const Value = struct {
                                 switch (try val.iter.get_type()) {
                                     .object => {
                                         var obj = try val.get_object();
-                                        inline for (std.meta.fields(C)) |field| {
-                                            const field_info = @typeInfo(field.type);
-                                            if (obj.find_field_unordered(field.name)) |obj_val_| {
+                                        inline for (comptime std.meta.fieldNames(C), comptime std.meta.fieldTypes(C)) |fieldn, fieldt| {
+                                            const field_info = @typeInfo(fieldt);
+                                            if (obj.find_field_unordered(fieldn)) |obj_val_| {
                                                 var obj_val = obj_val_;
                                                 if (field_info != .pointer)
-                                                    try obj_val.jsonParse(&@field(out, field.name), options)
+                                                    try obj_val.jsonParse(&@field(out, fieldn), options)
                                                 else {
                                                     if (options.allocator != null)
-                                                        try obj_val.jsonParse(&@field(out, field.name), options)
+                                                        try obj_val.jsonParse(&@field(out, fieldn), options)
                                                     else
-                                                        try obj_val.jsonParse(@field(out, field.name), options);
+                                                        try obj_val.jsonParse(@field(out, fieldn), options);
                                                 }
                                             } else |_| {}
                                         }
